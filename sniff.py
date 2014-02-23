@@ -82,11 +82,54 @@ def isAdminDevice(bmac):
 def pushFileToAdminDevice():
   print "  Need to push file to admin device"
 
+
+################################################################################
+# REQUESTS THE ADMIN DEVICES FILE
+################################################################################
+def requestFileFromAdminDevice():
+  print "  Need to request file from admin device"
+  return 0
+
+
+################################################################################
+# TAKES THE REQUESTED FILE AND UPDATES/ANALYZES THE DATA
+################################################################################
+def combineFileWithOthers(f):
+  print "  Need to combine the file with the other data and anaylze it"
+
+
+################################################################################
+# TAKES THE COMBINED AND ANALYZED DATA AND PUSHED IT TO THE WEBSITE
+################################################################################
+def pushDataToWebsite():
+  print "  Need to push to a website hosting this data (optional)"
+
+
+################################################################################
+# PRINT THE USAFE OF THERE WAS A MISTAKE ON INPUT
+################################################################################
+def printUsage():
+  print " usage: python sniffer.py <master/slave>"
+  print "  master - the single raspberry pi that takes files and analyzes then"
+  print "  slave - one of the many raspberry pi's that sniff and transfer to admin"
+  time.sleep(2)
+  sys.exit()
+
+
 ################################################################################
 # RUN FOREVER TO LISTEN FOR DEVICES
 ################################################################################
 while 1:
 
+  # if the user didn't specify master or slave
+  if(len(sys.argv) < 2):
+    printUsage()
+
+  # if the user specified master or slave but cannot spell (just to rub it in)
+  if(sys.argv[1] != "master" and sys.argv[1] != "slave"):
+    printUsage()
+
+  # if it's all good run the script (unless there's a keyboard interrupt)
   try:
 
     # inform the user that scanning is under way
@@ -106,8 +149,14 @@ while 1:
         bluetooth_mac = line.split().pop(0)
         line = (bluetooth_mac, curr_time)
         if isAdminDevice(bluetooth_mac):
-          print " Admin Device:",bluetooth_mac
-          pushFileToAdminDevice()
+          if(sys.argv[1] == "slave"):
+            print " Admin Device:",bluetooth_mac
+            pushFileToAdminDevice()
+          elif(sys.argv[1] == "master"):
+            print " Admin Device:",bluetooth_mac
+            file = requestFileFromAdminDevice()
+            combineFileWithOthers(file)
+            pushDataToWebsite()
         else:
           print " Sniffed Device:",bluetooth_mac
           alreadyDiscovered(bluetooth_mac, curr_time)
