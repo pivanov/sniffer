@@ -11,7 +11,7 @@ TIMEDOT = 10     # the number of waiting dots to print out (must be less than TI
 TIMEFMT = "%Y-%m-%d %H:%M:%S"    # how the timestamp is formatted
 RECORD_AGAIN = 10    # how long to wait to recond a recurring device again (in minutes)
 DEVICES_FILE = 'discovered.dat'    # the location of the discovered devices dat
-ADMIN_DEVICES = ["00:18:31:60:B5:42","00:00:00:00:00:00"]    # our devices (admins)
+ADMIN_DEVICES = ["00:18:31:60:B5:42","C8:14:79:BC:16:E3"]    # our devices (admins)
 
 ################################################################################
 # DETERMINES WHETHER TO RECORD THE DEVICE AGAIN
