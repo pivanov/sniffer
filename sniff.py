@@ -9,10 +9,14 @@ import os,sys,json,time,datetime,calendar,subprocess
 TIMEOUT = 10    # time the program pauses until next scan (in seconds)
 TIMEDOT = 10     # the number of waiting dots to print out (must be less than TIMEOUT)
 TIMEFMT = "%Y-%m-%d %H:%M:%S"    # how the timestamp is formatted
+NUM_SLAVES = 4    # the number of slave pi's planning to run
 RECORD_AGAIN = 10    # how long to wait to recond a recurring device again (in minutes)
 DEVICES_FILE = 'd_'    # the location of the discovered devices dat
+DEVICES_FILE_DIR = "/home/pi/Desktop/scripts"    # the directory of the device file
 DEVICES_FILE_EXT = '.dat'    # the device file file extention
+JSON_DB = 'devices.json'    # the devices jason database
 ADMIN_DEVICES = ["00:18:31:60:B5:42","C8:14:79:BC:16:E3"]    # our devices (admins)
+device_set = set()    # the device set used by master to aggregate information
 
 ################################################################################
 # DETERMINES WHETHER TO RECORD THE DEVICE AGAIN
@@ -81,7 +85,7 @@ def pushFileToAdminDevice(bmac, pi):
 
   # GET CONNECTION WORKING
 
-  p = subprocess.Popen(["obexftp", "-b", bmac, "-c", "/", "-p", DEVICES_FILE+pi+DEVICES_FILE_EXT], stdout=subprocess.PIPE)
+  p = subprocess.Popen(["obexftp", "-b", bmac, "-C", DEVICES_FILE_DIR, "-p", DEVICES_FILE+pi+DEVICES_FILE_EXT], stdout=subprocess.PIPE)
   out, err = p.communicate()
   log('file pushed\n')
 
@@ -89,25 +93,49 @@ def pushFileToAdminDevice(bmac, pi):
 ################################################################################
 # REQUESTS THE ADMIN DEVICES FILE
 ################################################################################
-def requestFileFromAdminDevice():
-  log('files requested - ')
-  return 0
+def requestFileFromAdminDevice(pi):
 
+  # get the file needed from the 
+  #p = subprocess.Popen(["obexftp", "-b", bmac, "-C", DEVICES_FILE_DIR, "-g", DEVICES_FILE+pi+DEVICES_FILE_EXT], stdout=subprocess.PIPE)
+  #out, err = p.communicate()
 
-################################################################################
-# TAKES THE REQUESTED FILE AND UPDATES/ANALYZES THE DATA
-################################################################################
-def combineFileWithOthers(f):
-  log('combined - ')
-  return 0
+  # open the file needed from admin device
+  file = open(DEVICES_FILE+str(pi)+DEVICES_FILE_EXT, 'a+')
+
+  return file.readlines()
 
 
 ################################################################################
 # TAKES THE COMBINED AND ANALYZED DATA AND PUSHED IT TO THE WEBSITE
 ################################################################################
-def pushDataToWebsite(device_set):
-  log('pushed\n')
+def pushDataToWebsite():
 
+  # opens the previous database
+  file = open(JSON_DB, 'a+')
+  file = file.readlines()
+
+  # updates the new device set with the old db devices
+  if file:
+    file.pop(0)
+    file.pop()
+    for line in file:
+      device_set.add(line.replace('},','}'))
+
+  # clears the old db (optimize here by not clearing and rewritting)
+  open(JSON_DB, 'w').close()
+
+  # write the device set to the json db
+  if device_set:
+    last_element = device_set.pop()
+    file = open(JSON_DB, 'a+')
+    file.write('[\n')
+    for device in device_set:
+      file.write(device.replace('\n',',\n'))
+    file.write(last_element)
+    file.write(']')
+
+  # add code to push to heroku
+  log('pushed\n')
 
 ################################################################################
 # PRINT THE USAFE OF THERE WAS A MISTAKE ON INPUT
@@ -117,7 +145,7 @@ def printUsage():
   err('  master - the single raspberry pi that takes files and analyzes then\n')
   err('  slave - one of the many raspberry pi\'s that sniff and transfer to admin\n')
   err('  1/2/3/... - a number representing the pi that sniffed the device\n')
-  err('           - note that masters number is irrelevant\n')
+  err('            - note that masters number is irrelevant\n')
   time.sleep(2)
   sys.exit()
 
@@ -180,9 +208,9 @@ while 1:
           if(sys.argv[1] == "slave"):
             pushFileToAdminDevice(bluetooth_mac,pi_ident)
           elif(sys.argv[1] == "master"):
-            file = requestFileFromAdminDevice()
-            device_set = combineFileWithOthers(file)
-            pushDataToWebsite(device_set)
+            for i in range(NUM_SLAVES+1):
+              device_set.update(requestFileFromAdminDevice(i))
+            pushDataToWebsite()
         else:
           log(" "+bluetooth_mac+" sniffed - ")
           alreadyDiscovered(bluetooth_mac, curr_time, pi_ident)
