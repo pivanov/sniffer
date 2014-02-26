@@ -1,7 +1,7 @@
 ################################################################################
 # IMPORTS NEEDED
 ################################################################################
-import os,sys,time,datetime,calendar,subprocess
+import os,sys,json,time,datetime,calendar,subprocess
 
 ################################################################################
 # CONSTANTS USED
@@ -10,7 +10,8 @@ TIMEOUT = 10    # time the program pauses until next scan (in seconds)
 TIMEDOT = 10     # the number of waiting dots to print out (must be less than TIMEOUT)
 TIMEFMT = "%Y-%m-%d %H:%M:%S"    # how the timestamp is formatted
 RECORD_AGAIN = 10    # how long to wait to recond a recurring device again (in minutes)
-DEVICES_FILE = 'discovered.dat'    # the location of the discovered devices dat
+DEVICES_FILE = 'd_'    # the location of the discovered devices dat
+DEVICES_FILE_EXT = '.dat'    # the device file file extention
 ADMIN_DEVICES = ["00:18:31:60:B5:42","C8:14:79:BC:16:E3"]    # our devices (admins)
 
 ################################################################################
@@ -26,43 +27,40 @@ def beenLongEnough(ft, ts):
 ################################################################################
 # CHECK IF THE DEVICE HAS ALREADY BEEN RECORDED (RECORD IT IF IT HAS NOT)
 ################################################################################
-def alreadyDiscovered(bmac, timestamp):
+def alreadyDiscovered(bmac, timestamp, pi):
 
   # create the file if it does not exist and add the device
-  if not os.path.isfile('discovered.dat'):
-    file = open(DEVICES_FILE, 'a')
-    print "  Seen for the first time :)"
-    line = (bmac,timestamp.strftime(TIMEFMT))
-    file.write(','.join(line))
+  if not os.path.isfile(DEVICES_FILE+pi+DEVICES_FILE_EXT):
+    file = open(DEVICES_FILE+pi+DEVICES_FILE_EXT, 'a')
+    log('first time\n')
+    file.write(json.dumps({'time': timestamp.strftime(TIMEFMT),'mac': bmac,'pi': pi}))
     file.write('\n')
 
   # if it does exist see if the device is already discovered
   else:
-    file = open(DEVICES_FILE, 'a+')
+    file = open(DEVICES_FILE+pi+DEVICES_FILE_EXT, 'a+')
     file_split = file.readlines()
     seen = 0
     file_time_last = ""
     for line in file_split:
-      line_split = line.split(',')
-      file_bmac = line_split.pop(0)
-      file_time = line_split.pop(0).strip()
-      if bmac == file_bmac:
+      line_json = json.loads(line)
+      file_mac = line_json['mac']
+      file_time = line_json['time']
+      if bmac == file_mac:
         file_time_last = file_time
         seen = 1
 
     if seen:
       time_last_seen = beenLongEnough(file_time_last, timestamp)
       if time_last_seen:
-        print "  Last seen",time_last_seen,"seconds ago... writting to file again"
-        line = (bmac,timestamp.strftime(TIMEFMT),str(time_last_seen))
-        file.write(','.join(line))
+        log('updated\n')
+        file.write(json.dumps({'time': timestamp.strftime(TIMEFMT),'mac': bmac,'pi': pi}))
         file.write('\n')
       else :
-        print "  Seen too soon ago... not writting to file"
+        log('ignored\n')
     else:
-      print "  Seen for the first time :)"
-      line = (bmac,timestamp.strftime(TIMEFMT))
-      file.write(','.join(line))
+      log('first time\n')
+      file.write(json.dumps({'time': timestamp.strftime(TIMEFMT),'mac': bmac,'pi': pi}))
       file.write('\n')
 
   # close the discovered devices file
@@ -80,14 +78,14 @@ def isAdminDevice(bmac):
 # PUSHES THE DISCOVERED DEVICES FILE TO THE ADMIN DEVICE
 ################################################################################
 def pushFileToAdminDevice():
-  print "  Need to push file to admin device"
+  log('file pushed\n')
 
 
 ################################################################################
 # REQUESTS THE ADMIN DEVICES FILE
 ################################################################################
 def requestFileFromAdminDevice():
-  print "  Need to request file from admin device"
+  log('files requested - ')
   return 0
 
 
@@ -95,26 +93,42 @@ def requestFileFromAdminDevice():
 # TAKES THE REQUESTED FILE AND UPDATES/ANALYZES THE DATA
 ################################################################################
 def combineFileWithOthers(f):
-  print "  Need to combine the file with the other data and anaylze it"
+  log('combined - ')
+  return 0
 
 
 ################################################################################
 # TAKES THE COMBINED AND ANALYZED DATA AND PUSHED IT TO THE WEBSITE
 ################################################################################
-def pushDataToWebsite():
-  print "  Need to push to a website hosting this data (optional)"
+def pushDataToWebsite(device_set):
+  log('pushed\n')
 
 
 ################################################################################
 # PRINT THE USAFE OF THERE WAS A MISTAKE ON INPUT
 ################################################################################
 def printUsage():
-  print " usage: python sniffer.py <master/slave>"
-  print "  master - the single raspberry pi that takes files and analyzes then"
-  print "  slave - one of the many raspberry pi's that sniff and transfer to admin"
+  err(' usage: python sniffer.py <master/slave> <1/2/3/...>\n')
+  err('  master - the single raspberry pi that takes files and analyzes then\n')
+  err('  slave - one of the many raspberry pi\'s that sniff and transfer to admin\n')
+  err('  1/2/3/... - a number representing the pi that sniffed the device\n')
+  err('           - note that masters number is irrelevant\n')
   time.sleep(2)
   sys.exit()
 
+################################################################################
+# PRINT THE MESSAGE TO BYPASS NEWLINE
+################################################################################
+def log(message):
+  sys.stdout.write(message)
+  sys.stdout.flush()
+
+################################################################################
+# PRINT THE ERROR TO BYPASS NEWLINE
+################################################################################
+def err(message):
+  sys.stderr.write(message)
+  sys.stderr.flush()
 
 ################################################################################
 # RUN FOREVER TO LISTEN FOR DEVICES
@@ -129,14 +143,18 @@ while 1:
   if(sys.argv[1] != "master" and sys.argv[1] != "slave"):
     printUsage()
 
+  # if the use didn't enter a number for pi identification when in slave mode
+  if(sys.argv[1] == "slave" and len(sys.argv) < 3):
+    printUsage()
+
   # if it's all good run the script (unless there's a keyboard interrupt)
   try:
 
     # inform the user that scanning is under way
-    print "Scanning for discoverable bluetooth devices..."
+    log("scanning for discoverable bluetooth devices...\n")
 
     # scan for available bluetooth devices (discoverable)
-    p = subprocess.Popen(["hcitool", "scan"], stdout=subprocess.PIPE)
+    p = subprocess.Popen(["hcitool", "scan", "--flush"], stdout=subprocess.PIPE)
     out, err = p.communicate()
 
     # get the appropriate data from the scan
@@ -147,30 +165,30 @@ while 1:
       if line:
         curr_time = datetime.datetime.now()
         bluetooth_mac = line.split().pop(0)
+        if(sys.argv[1] == "master"):
+          pi_ident = '0'
+        else:
+          pi_ident = sys.argv[2]
         line = (bluetooth_mac, curr_time)
         if isAdminDevice(bluetooth_mac):
+          log(" "+bluetooth_mac+" admin - ")
           if(sys.argv[1] == "slave"):
-            print " Admin Device:",bluetooth_mac
             pushFileToAdminDevice()
           elif(sys.argv[1] == "master"):
-            print " Admin Device:",bluetooth_mac
             file = requestFileFromAdminDevice()
-            combineFileWithOthers(file)
-            pushDataToWebsite()
+            device_set = combineFileWithOthers(file)
+            pushDataToWebsite(device_set)
         else:
-          print " Sniffed Device:",bluetooth_mac
-          alreadyDiscovered(bluetooth_mac, curr_time)
+          log(" "+bluetooth_mac+" sniffed - ")
+          alreadyDiscovered(bluetooth_mac, curr_time, pi_ident)
 
     # pause an appropriate amount of time until next scan
-    sys.stdout.write(' Waiting')
-    sys.stdout.flush()
+    log(' waiting')
     for inc in range(TIMEDOT):
       time.sleep(TIMEOUT/TIMEDOT)
-      sys.stdout.write('.')
-      sys.stdout.flush()
-    print ""
+      log('.')
+    log('\n')
 
   except KeyboardInterrupt:
-    print "\nStopping scan for discoverable bluetooth devices..."
-    time.sleep(2)
+    log('\nstopping scan for discoverable bluetooth devices...\n')
     sys.exit()
