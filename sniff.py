@@ -77,7 +77,12 @@ def isAdminDevice(bmac):
 ################################################################################
 # PUSHES THE DISCOVERED DEVICES FILE TO THE ADMIN DEVICE
 ################################################################################
-def pushFileToAdminDevice():
+def pushFileToAdminDevice(bmac, pi):
+
+  # GET CONNECTION WORKING
+
+  p = subprocess.Popen(["obexftp", "-b", bmac, "-c", "/", "-p", DEVICES_FILE+pi+DEVICES_FILE_EXT], stdout=subprocess.PIPE)
+  out, err = p.communicate()
   log('file pushed\n')
 
 
@@ -173,7 +178,7 @@ while 1:
         if isAdminDevice(bluetooth_mac):
           log(" "+bluetooth_mac+" admin - ")
           if(sys.argv[1] == "slave"):
-            pushFileToAdminDevice()
+            pushFileToAdminDevice(bluetooth_mac,pi_ident)
           elif(sys.argv[1] == "master"):
             file = requestFileFromAdminDevice()
             device_set = combineFileWithOthers(file)
