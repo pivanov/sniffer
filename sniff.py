@@ -9,14 +9,17 @@ import os,sys,json,time,datetime,calendar,subprocess
 TIMEOUT = 10    # time the program pauses until next scan (in seconds)
 TIMEDOT = 10     # the number of waiting dots to print out (must be less than TIMEOUT)
 TIMEFMT = "%Y-%m-%d %H:%M:%S"    # how the timestamp is formatted
+JSON_DB = 'devices.json'    # the devices jason database
+PI_ADDRS = ["132.239.10.88","","","",""] # the ip addresses of the pi's running
+PUSH_TIME = 10    # the amount of time to wait until you push to heroku db again (in minutes)
 NUM_SLAVES = 4    # the number of slave pi's planning to run
 RECORD_AGAIN = 10    # how long to wait to recond a recurring device again (in minutes)
 DEVICES_FILE = 'd_'    # the location of the discovered devices dat
+ADMIN_DEVICES = ["00:18:31:60:B5:42","C8:14:79:BC:16:E3"]    # our devices (admins)
 DEVICES_FILE_DIR = "/home/pi/Desktop/scripts"    # the directory of the device file
 DEVICES_FILE_EXT = '.dat'    # the device file file extention
-JSON_DB = 'devices.json'    # the devices jason database
-ADMIN_DEVICES = ["00:18:31:60:B5:42","C8:14:79:BC:16:E3"]    # our devices (admins)
 device_set = set()    # the device set used by master to aggregate information
+time_to_push = 600    # the time of when to push to heroku
 
 ################################################################################
 # DETERMINES WHETHER TO RECORD THE DEVICE AGAIN
@@ -70,40 +73,18 @@ def alreadyDiscovered(bmac, timestamp, pi):
   # close the discovered devices file
   file.close()
 
-
-################################################################################
-# CHECK IF THE DEVICE IS AN ADMIN DEVICE
-################################################################################
-def isAdminDevice(bmac):
-  return 1 if bmac in ADMIN_DEVICES else 0
-
-
-################################################################################
-# PUSHES THE DISCOVERED DEVICES FILE TO THE ADMIN DEVICE
-################################################################################
-def pushFileToAdminDevice(bmac, pi):
-
-  # GET CONNECTION WORKING
-
-  p = subprocess.Popen(["obexftp", "-b", bmac, "-C", DEVICES_FILE_DIR, "-p", DEVICES_FILE+pi+DEVICES_FILE_EXT], stdout=subprocess.PIPE)
-  out, err = p.communicate()
-  log('file pushed\n')
-
-
 ################################################################################
 # REQUESTS THE ADMIN DEVICES FILE
 ################################################################################
-def requestFileFromAdminDevice(pi):
+def updateDeviceSetViaScp():
 
-  # get the file needed from the 
-  #p = subprocess.Popen(["obexftp", "-b", bmac, "-C", DEVICES_FILE_DIR, "-g", DEVICES_FILE+pi+DEVICES_FILE_EXT], stdout=subprocess.PIPE)
-  #out, err = p.communicate()
-
-  # open the file needed from admin device
-  file = open(DEVICES_FILE+str(pi)+DEVICES_FILE_EXT, 'a+')
-
-  return file.readlines()
-
+  # get the files needed from the slave pi's 
+  for i,pi in enumerate(PI_ADDRS):
+    if(pi): # remove this line when all slots in PI_ADDRS are filled
+      p = subprocess.Popen(["scp", "pi@"+pi+"/home/pi/Desktop/scripts/d_"+str(i+1)+DEVICES_FILE_EXT, "."], stdout=subprocess.PIPE)
+      out, err = p.communicate()
+      file = open(DEVICES_FILE+str(i+1)+DEVICES_FILE_EXT, 'a+')
+      device_set.update((file.readlines()))
 
 ################################################################################
 # TAKES THE COMBINED AND ANALYZED DATA AND PUSHED IT TO THE WEBSITE
@@ -134,7 +115,11 @@ def pushDataToWebsite():
     file.write(last_element)
     file.write(']')
 
-  # add code to push to heroku
+  # actually push the file to the heroku json data base
+  #p = subprocess.Popen(["heroku", "run", "node", "initDB.js"], stdout=subprocess.PIPE)
+  #out, err = p.communicate()
+
+  # log that the data has been pushed
   log('pushed\n')
 
 ################################################################################
@@ -192,28 +177,24 @@ while 1:
 
     # get the appropriate data from the scan
     out_split = out.split('\n')
+
+    # get rid of the "Scanning..." line that "hcitool scan" flushes to output
     out_split.pop(0)
+
+    # check each line read from "hcitool scan" and see if a device was sniffed
     for s in out_split:
       line = s.strip()
       if line:
-        curr_time = datetime.datetime.now()
         bluetooth_mac = line.split().pop(0)
-        if(sys.argv[1] == "master"):
-          pi_ident = '0'
-        else:
-          pi_ident = sys.argv[2]
-        line = (bluetooth_mac, curr_time)
-        if isAdminDevice(bluetooth_mac):
-          log(" "+bluetooth_mac+" admin - ")
-          if(sys.argv[1] == "slave"):
-            pushFileToAdminDevice(bluetooth_mac,pi_ident)
-          elif(sys.argv[1] == "master"):
-            for i in range(NUM_SLAVES+1):
-              device_set.update(requestFileFromAdminDevice(i))
-            pushDataToWebsite()
-        else:
-          log(" "+bluetooth_mac+" sniffed - ")
-          alreadyDiscovered(bluetooth_mac, curr_time, pi_ident)
+        curr_time = datetime.datetime.now()
+        pi_ident = '0' if sys.argv[1] == "master" else sys.argv[2]
+        log(" "+bluetooth_mac+" sniffed - ")
+        alreadyDiscovered(bluetooth_mac, curr_time, pi_ident)
+        if sys.argv[1] == "master" and time_to_push >= 600:
+          log(' pushing after '+str(time_to_push)+' seconds of waiting... ')
+          updateDeviceSetViaScp()
+          pushDataToWebsite()
+          time_to_push = 0
 
     # pause an appropriate amount of time until next scan
     log(' waiting')
@@ -221,6 +202,9 @@ while 1:
       time.sleep(TIMEOUT/TIMEDOT)
       log('.')
     log('\n')
+
+    # update the time until master pushes to heroku
+    time_to_push = time_to_push + TIMEOUT;
 
   except KeyboardInterrupt:
     log('\nstopping scan for discoverable bluetooth devices...\n')
