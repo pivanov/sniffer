@@ -1,7 +1,7 @@
 ################################################################################
 # IMPORTS NEEDED
 ################################################################################
-import os,sys,json,time,datetime,calendar,subprocess
+import os,sys,json,time,paramiko,datetime,calendar,subprocess,pprint
 
 ################################################################################
 # CONSTANTS USED
@@ -10,9 +10,8 @@ TIMEOUT = 10    # time the program pauses until next scan (in seconds)
 TIMEDOT = 10     # the number of waiting dots to print out (must be less than TIMEOUT)
 TIMEFMT = "%Y-%m-%d %H:%M:%S"    # how the timestamp is formatted
 JSON_DB = 'devices.json'    # the devices jason database
-PI_ADDRS = ["132.239.10.88","","","",""] # the ip addresses of the pi's running
+PI_ADDRS = ["","","","",""] # the ip addresses of the pi's running
 PUSH_TIME = 10    # the amount of time to wait until you push to heroku db again (in minutes)
-NUM_SLAVES = 4    # the number of slave pi's planning to run
 RECORD_AGAIN = 10    # how long to wait to recond a recurring device again (in minutes)
 DEVICES_FILE = 'd_'    # the location of the discovered devices dat
 ADMIN_DEVICES = ["00:18:31:60:B5:42","C8:14:79:BC:16:E3"]    # our devices (admins)
@@ -78,11 +77,19 @@ def alreadyDiscovered(bmac, timestamp, pi):
 ################################################################################
 def updateDeviceSetViaScp():
 
-  # get the files needed from the slave pi's 
-  for i,pi in enumerate(PI_ADDRS):
-    if(pi): # remove this line when all slots in PI_ADDRS are filled
-      p = subprocess.Popen(["scp", "pi@"+pi+"/home/pi/Desktop/scripts/d_"+str(i+1)+DEVICES_FILE_EXT, "."], stdout=subprocess.PIPE)
-      out, err = p.communicate()
+  # get the files needed from the slave pi's
+  for i,hostname in enumerate(PI_ADDRS):
+    if(hostname): # remove this line when all slots in PI_ADDRS are filled
+      password = 'raspberry'
+      username = "pi"
+      port = 22
+      localpath='/home/pi/Desktop/scripts/d_'+str(i)+'.dat'
+      remotepath='/home/pi/Desktop/scripts/d_'+str(i)+'.dat'
+      print localpath
+      t = paramiko.Transport((hostname, 22))
+      t.connect(username=username, password=password)
+      sftp = paramiko.SFTPClient.from_transport(t)
+      sftp.get(remotepath, localpath)
       file = open(DEVICES_FILE+str(i+1)+DEVICES_FILE_EXT, 'a+')
       device_set.update((file.readlines()))
 
